@@ -1,53 +1,68 @@
 # Mini-Scan
 
-Hello!
+This repository contains two services:
 
-As you've heard by now, Censys scans the internet at an incredible scale. Processing the results necessitates scaling horizontally across thousands of machines. One key aspect of our architecture is the use of distributed queues to pass data between machines.
+- **Scanner** – publishes random scan messages to a Pub/Sub topic.
+- **Processor** – reads those messages, keeps the newest response for each `(ip, port, service)`, and stores it in Postgres.
 
----
+## Features
 
-The `docker-compose.yml` file sets up a toy example of a scanner. It spins up a Google Pub/Sub emulator, creates a topic and subscription, and publishes scan results to the topic. It can be run via `docker compose up`.
+- **At-least-once processing:** the processor only acks a message after a successful database write. Failures result in `Nack` and redelivery.
+- **Latest-record wins:** messages with an older timestamp than what’s stored are skipped.
+- **Pluggable storage:** the processor depends on the `storage.Store` interface, so swapping Postgres for another store only requires a new implementation.
+- **Integration test:** a Go test spins up Postgres, applies the migration, and verifies insert/update/stale behavior end-to-end.
 
-Your job is to build the data processing side. It should:
+## Requirements
 
-1. Pull scan results from the subscription `scan-sub`.
-2. Maintain an up-to-date record of each unique `(ip, port, service)`. This should contain when the service was last scanned and a string containing the service's response.
+- Docker Desktop
+- Go 1.20 or newer
 
-> **_NOTE_**
-> The scanner can publish data in two formats, shown below. In both of the following examples, the service response should be stored as: `"hello world"`.
->
-> ```javascript
-> {
->   // ...
->   "data_version": 1,
->   "data": {
->     "response_bytes_utf8": "aGVsbG8gd29ybGQ="
->   }
-> }
->
-> {
->   // ...
->   "data_version": 2,
->   "data": {
->     "response_str": "hello world"
->   }
-> }
-> ```
+## Setup
 
-Your processing application should be able to be scaled horizontally, but this isn't something you need to actually do. The processing application should use `at-least-once` semantics where ever applicable.
+1. Clone this repo:
+   ```bash
+   git clone https://github.com/christian-palko/mini-scan-takehome.git
+   cd mini-scan-takehome
+   ```
+2. Ensure Docker Desktop is running
 
-You may write this in any languages you choose, but Go would be preferred.
+## Development Workflow
 
-You may use any data store of your choosing, with `sqlite` being one example. Like our own code, we expect the code structure to make it easy to switch data stores.
+```bash
+make up
+```
 
-Please note that Google Pub/Sub is best effort ordering and we want to keep the latest scan. While the example scanner does not publish scans at a rate where this would be an issue, we expect the application to be able to handle extreme out of orderness. Consider what would happen if the application received a scan that is 24 hours old.
+This builds and starts the Pub/Sub emulator, Postgres, scanner, and processor, waits for them to become healthy, applies the initial migration, and lastly tails the processor/scanner logs. With `air` running, edits to Go files trigger a rebuild automatically.
 
----
+Once this is running, the provided scanner will begin sending Pub/Sub messages of random scans to the processor, and the processor will continually upsert only fresh records.
 
-Please upload the code to a publicly accessible GitHub, GitLab or other public code repository account. This README file should be updated, briefly documenting your solution. Like our own code, we expect testing instructions: whether it’s an automated test framework, or simple manual steps.
+### Stopping
 
-To help set expectations, we believe you should aim to take no more than 4 hours on this task.
+```bash
+make down
+```
 
-We understand that you have other responsibilities, so if you think you’ll need more than 5 business days, just let us know when you expect to send a reply.
+## Testing
 
-Please don’t hesitate to ask any follow-up questions for clarification.
+```bash
+make test
+```
+
+This runs `go test ./...`. Highlights:
+
+- `pkg/storage/storage_test.go` spins up a temporary Postgres container, applies `db/migrations/0001_init.sql`, and verifies insert/ignore/update behavior.
+- `cmd/processor/main_test.go` exercises the message handler for both v1 and v2 payloads with a stubbed store.
+
+## Project Structure
+
+- `cmd/processor`: Pub/Sub consumer that writes to Postgres.
+- `cmd/scanner`: Sample publisher feeding random scans.
+- `pkg/storage`: Database models and the staleless `StoreScanRecord` logic.
+- `storage.Store`: simple interface so a different store (e.g., DynamoDB, SQLite) can be plugged in without touching the processor.
+- `db/migrations`: SQL schema
+
+## Future Improvements
+
+- Switch to a formal migration tool (e.g., `golang-migrate`)
+- Add metrics / tracing
+- Build CI pipeline that runs `make test` and lints the code.

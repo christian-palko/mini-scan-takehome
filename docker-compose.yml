@@ -40,3 +40,45 @@ services:
     build:
       context: .
       dockerfile: ./cmd/scanner/Dockerfile
+    volumes:
+      - ./:/src
+      - air-cache:/root/.cache
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: scans
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Runs the processor
+  processor:
+    depends_on:
+      mk-subscription:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: test-project
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/scans?sslmode=disable
+    build:
+      context: .
+      dockerfile: ./cmd/processor/Dockerfile
+    volumes:
+      - ./:/src
+      - air-cache:/root/.cache
+
+volumes:
+  postgres_data:
+  air-cache:

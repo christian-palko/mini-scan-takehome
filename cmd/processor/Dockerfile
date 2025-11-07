@@ -7,4 +7,5 @@ RUN curl -sSL https://github.com/air-verse/air/releases/download/v${AIR_VERSION}
 
 WORKDIR /src
 
-CMD ["air", "-c", "cmd/scanner/.air.toml"]
+CMD ["air", "-c", "cmd/processor/.air.toml"]
+
