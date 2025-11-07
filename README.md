@@ -10,7 +10,7 @@ This repository contains two services:
 - **At-least-once processing:** the processor only acks a message after a successful database write. Failures result in `Nack` and redelivery.
 - **Latest-record wins:** messages with an older timestamp than what’s stored are skipped.
 - **Pluggable storage:** the processor depends on the `storage.Store` interface, so swapping Postgres for another store only requires a new implementation.
-- **Integration test:** a Go test spins up Postgres, applies the migration, and verifies insert/update/stale behavior end-to-end.
+- **Integration + unit tests:** one test runs against Postgres to check insert/update/stale handling, and another covers v1/v2 payload parsing.
 
 ## Requirements
 
